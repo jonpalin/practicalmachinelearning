@@ -1,0 +1,100 @@
+---
+title: "Predicting correct dumbell use"
+author: "Jon Palin"
+date: "02/02/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+We find that a random forest model can predict the class of dumbell usage with 99% accuracy.
+
+## Introduction
+
+This is written to answer the [course project](https://www.coursera.org/learn/practical-machine-learning/peer/R43St/prediction-assignment-writeup) from the Coursera Practical Machine Learning course. 
+
+We are given data collected from accelerometers while study participants lifted dumbells in five different ways. We are asked to fit a classifier model, and then to apply this to a test set.
+
+## Preliminaries
+
+We load the necessary packages and set a seed for reproduciblity.
+
+```{r prelims, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+
+set.seed(1)
+```
+
+## Data
+
+We load the data and make three amendments to it:
+1. Remove any columns which contain NA values.
+2. Remove the first few colums, as these contain information specific to the participant and the time the data was collected. Even though these could be useful for predictions on the test set, they could mean that the model did not generalize to other data sets well. For example, "num_window" can be used to predict the type of dumbell use perfectly, but this would likely be useless for other data sets.
+3. Convert the target variable, "classe", to a factor.
+```{r data, message=FALSE, warning=FALSE}
+data <-
+    read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv") %>%
+    select_if(~ !any(is.na(.))) %>%    # remove columns with NA
+    select(-(X1:num_window)) %>%       # remove first few columns
+    mutate(classe = as.factor(classe)) # make classe a factor
+```
+
+We could consider processing the data further (e.g. normalizing, Box-Cox transforms, PCA) but this proved unnecessary - we were able to obtain good prediction accuracy without them.
+
+Next, split the data into training and testing datasets.
+```{r split}
+inTrain <- createDataPartition(data$classe, p = 0.75, list = FALSE)
+training <- data[inTrain,]
+testing <- data[-inTrain,]
+```
+
+## Random forest model
+
+There are many different models that we could consider. We tried a random forest model first, and as this gave good results we did not implement other models.
+
+```{r fitrf}
+fitRF <- train(
+    classe ~ .,
+    data = training,
+    method = "rf",
+    trControl = trainControl(method = "cv",  # cross-validation
+                             number = 3)     # three-fold seems sufficient
+    )
+```
+
+Now test the model on the testing set.
+```{r testrf}
+predictRF <- predict(fitRF, testing)
+confusionMatrix(predictRF, testing$classe)
+```
+
+The results are excellent with accuracy of over 99%, and high sensitivity and specificity for each class of dumbell use. The 95% confidence interval for accuracy is 99.0%-99.5%.
+
+We test which predictors are most important.
+```{r varimp}
+varImp(fitRF)
+```
+
+The results seem reasonable - these are all genuine accelerometer measurements, rather than spurious predictors such as time or participant.
+
+## Predictions
+
+We finally need to make predictions on the data set for the quiz. First load the data.
+```{r quiz, message=FALSE, warning=FALSE}
+quizdata <-
+    read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv") %>%
+    select_if(~ !any(is.na(.))) %>%
+    select(-(X1:num_window))  
+```
+
+And then predict the answers.
+```{r predict}
+predict(fitRF, quizdata)
+```
+
+These were all correct.
